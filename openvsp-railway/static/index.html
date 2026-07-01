@@ -105,6 +105,7 @@
     .stat .v { font-size: 1.35rem; font-weight: 700; color: var(--accent2); }
     .stat .k { font-size: 0.75rem; color: var(--muted); }
     .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .perf-grid .chart-box { height: 340px; }
     @media (max-width: 1100px) { .charts { grid-template-columns: 1fr; } }
     .chart-box {
       background: #0d1526;
@@ -176,21 +177,22 @@
         <h3 style="margin-top:0">Performance summary</h3>
         <pre id="outputText" style="margin:0;font-size:0.85rem;color:var(--muted);white-space:pre-wrap"></pre>
       </div>
-      <h3 class="hidden" id="perfTitle" style="margin:0 0 0.75rem">Mission performance (MATLAB curves)</h3>
-      <div class="charts hidden" id="perfCharts">
+      <h3 class="hidden" id="perfTitle" style="margin:0 0 0.75rem">Performance mapping</h3>
+      <div class="charts perf-grid hidden" id="perfCharts">
         <div class="chart-box"><h3>Range vs velocity</h3><canvas id="chartRange"></canvas></div>
         <div class="chart-box"><h3>Endurance vs velocity</h3><canvas id="chartEndurance"></canvas></div>
         <div class="chart-box"><h3>L/D vs velocity</h3><canvas id="chartLdV"></canvas></div>
-        <div class="chart-box"><h3>Power vs velocity</h3><canvas id="chartPower"></canvas></div>
-        <div class="chart-box"><h3>Drag polar (CL vs CD)</h3><canvas id="chartPolarPerf"></canvas></div>
+        <div class="chart-box"><h3>Power required</h3><canvas id="chartPower"></canvas></div>
       </div>
-      <h3 class="hidden" id="aeroTitle" style="margin:1.5rem 0 0.75rem">VSPAero polar sweep</h3>
-      <div class="charts hidden" id="charts">
-        <div class="chart-box"><h3>CL vs α</h3><canvas id="chartCl"></canvas></div>
-        <div class="chart-box"><h3>CD vs α</h3><canvas id="chartCd"></canvas></div>
-        <div class="chart-box"><h3>L/D vs α</h3><canvas id="chartLd"></canvas></div>
-        <div class="chart-box"><h3>Drag polar (α sweep)</h3><canvas id="chartPolar"></canvas></div>
-      </div>
+      <details class="panel hidden" id="aeroSection" style="margin-top:1rem">
+        <summary style="cursor:pointer;font-weight:600">VSPAero polar sweep (advanced)</summary>
+        <div class="charts" id="charts" style="margin-top:1rem">
+          <div class="chart-box"><h3>CL vs α</h3><canvas id="chartCl"></canvas></div>
+          <div class="chart-box"><h3>CD vs α</h3><canvas id="chartCd"></canvas></div>
+          <div class="chart-box"><h3>L/D vs α</h3><canvas id="chartLd"></canvas></div>
+          <div class="chart-box"><h3>Drag polar (α sweep)</h3><canvas id="chartPolar"></canvas></div>
+        </div>
+      </details>
       <div class="panel hidden" id="tablePanel" style="margin-top:1rem">
         <h3 style="margin-top:0">Polar data</h3>
         <table><thead><tr><th>α</th><th>CL</th><th>CD</th><th>L/D</th></tr></thead><tbody id="polarBody"></tbody></table>
@@ -243,7 +245,7 @@
         { key: "tailTipChord", label: "Tail Tip Chord (m)", default: 0.81 },
       ],
     };
-    let models = [], charts = {};
+    let models = [], charts = {}, lastPayload = null;
     const $ = (id) => document.getElementById(id);
 
     function apiBase() {
@@ -334,7 +336,181 @@
       return applyLegacyApiFields(vehicle, body);
     }
 
-    function lineChart(id, labels, data, color, xl, yl) {
+    function geometryParamsFromPayload(payload) {
+      const params = {};
+      (LOCAL_MODEL_PARAMETERS[payload.vehicle] || []).forEach((field) => {
+        if (payload[field.key] != null) params[field.key] = payload[field.key];
+        else if (field.default != null) params[field.key] = field.default;
+      });
+      return params;
+    }
+
+    function velocityGrid(vehicleId) {
+      const end = (vehicleId === "aai-shadow" || vehicleId === "iai-heron") ? 75 : 100;
+      return Array.from({ length: 500 }, (_, i) => 15 + i * (end - 15) / 499);
+    }
+
+    function nearestPolarRow(polar, alphaDeg = 3) {
+      if (!polar.length) return { alpha: alphaDeg, cl: 0.4, cd: 0.025, cdi: 0.01 };
+      return polar.reduce((best, row) =>
+        Math.abs(row.alpha - alphaDeg) < Math.abs(best.alpha - alphaDeg) ? row : best
+      );
+    }
+
+    function extractAero(polar, vehicleId) {
+      const row = nearestPolarRow(polar);
+      let cl = row.cl;
+      let cd = row.cd;
+      let cdi = row.cdi ?? Math.max(cd * 0.4, 0);
+      const bad = Number.isNaN(cl) || cl < 0 || cl > 4 || cd < 0 || cd > 2;
+      if (bad) {
+        if (vehicleId === "hero-400ec") { cl = 0.42; cd = 0.021; cdi = 0.009; }
+        else { cl = 0.38; cd = 0.032; cdi = 0.014; }
+      }
+      return { cl, cd, cdi };
+    }
+
+    function parabolicPolar(velocities, weight, sRef, cd0, k, eta, pAvail) {
+      const RHO = 1.225;
+      const clV = [], cdV = [], ldV = [], pr = [];
+      velocities.forEach((vel) => {
+        const q = Math.max(0.5 * RHO * vel * vel * sRef, 1e-6);
+        const cl = weight / q;
+        const cd = cd0 + k * cl * cl;
+        const ld = cd ? cl / cd : 0;
+        const pd = 0.5 * RHO * vel ** 3 * sRef * cd;
+        clV.push(cl); cdV.push(cd); ldV.push(ld); pr.push(pd / eta + pAvail);
+      });
+      return { clV, cdV, ldV, pr };
+    }
+
+    function computeMatlabPerformance(vehicleId, params, polar) {
+      const G = 9.81;
+      const { cl, cd, cdi } = extractAero(polar, vehicleId);
+      const v = velocityGrid(vehicleId);
+      let sRef, ar, name, uR, uE, clV, cdV, ldV, pr, cd0, k;
+
+      if (vehicleId === "hero-400ec") {
+        const wingSpan = params.wingSpan ?? 2.4;
+        const wingChord = params.wingChord ?? 0.36;
+        sRef = wingSpan * wingChord;
+        ar = wingSpan ** 2 / sRef;
+        const weight = 40 * G;
+        cd0 = Math.max(cd - cdi, 0);
+        k = cdi / Math.max(cl ** 2, 1e-6);
+        const battWh = 4500;
+        const eta = 0.65;
+        const pAvail = 150;
+        ({ clV, cdV, ldV, pr } = parabolicPolar(v, weight, sRef, cd0, k, eta, pAvail));
+        const j = battWh * 3600 * 0.8;
+        uR = pr.map((p, i) => (p > 0 ? (v[i] * (j / p)) / 1000 : 0));
+        uE = pr.map((p) => (p > 0 ? (j / p) / 3600 : 0));
+        name = "Hero 400EC";
+      } else if (vehicleId === "shahed-136") {
+        const semi = params.semiSpan ?? 2.5;
+        const root = params.rootChord ?? 2.276;
+        sRef = 0.5 * root * (2 * semi);
+        ar = (2 * semi) ** 2 / sRef;
+        const weight = 200 * G;
+        cd0 = Math.max(cd - cdi, 0.008);
+        k = cdi / Math.max(cl ** 2, 1e-6);
+        const wFuel = 50 * G;
+        const sfc = 0.55 / (1000 * 3600);
+        const eta = 0.6;
+        const pAvail = 300;
+        ({ clV, cdV, ldV, pr } = parabolicPolar(v, weight, sRef, cd0, k, eta, pAvail));
+        const w1 = weight - wFuel;
+        const br = ldV.map((ld) => (eta / (G * sfc)) * ld * Math.log(weight / w1));
+        uR = br.map((b) => b / 1000);
+        uE = br.map((b, i) => (v[i] > 0 ? b / (v[i] * 1000) : 0));
+        name = "Shahed 136";
+      } else if (vehicleId === "aai-shadow") {
+        const wingSpan = params.wingSpan ?? 4.68846;
+        const root = params.wingRootChord ?? 0.6586;
+        const tip = params.wingTipChord ?? 0.6586;
+        sRef = wingSpan * (root + tip) / 2;
+        ar = wingSpan ** 2 / sRef;
+        const weight = 170 * G;
+        cd0 = Math.max(cd - cdi, 0.018);
+        k = cdi / Math.max(cl ** 2, 1e-6);
+        const wFuel = 40 * G;
+        const sfc = 0.55 / (1000 * 3600);
+        const eta = 0.7;
+        const pAvail = 28500;
+        ({ clV, cdV, ldV, pr } = parabolicPolar(v, weight, sRef, cd0, k, eta, pAvail));
+        const w1 = weight - wFuel;
+        const br = ldV.map((ld) => (eta / (G * sfc)) * ld * Math.log(weight / w1));
+        uR = br.map((b) => b / 1000);
+        uE = br.map((b, i) => (v[i] > 0 ? b / (v[i] * 1000) : 0));
+        name = "AAI Shadow 200";
+      } else {
+        const wingSpan = params.wingSpan ?? 16.677;
+        const sec1Span = params.sec1Span ?? 1.77872;
+        const sec1Root = params.sec1RootChord ?? 1.29;
+        const sec2Span = params.sec2Span ?? 6.56;
+        const sec2Root = params.sec2RootChord ?? 1.29;
+        const sec2Tip = params.sec2TipChord ?? 0.64;
+        sRef = 2 * (sec1Span * sec1Root + sec2Span * (sec2Root + sec2Tip) / 2);
+        ar = wingSpan ** 2 / sRef;
+        const weight = 1150 * G;
+        cd0 = Math.max(cd - cdi, 0.015);
+        k = cdi / Math.max(cl ** 2, 1e-6);
+        const wFuel = 350 * G;
+        const sfc = 0.45 / (1000 * 3600);
+        const eta = 0.75;
+        const pAvail = 160000;
+        ({ clV, cdV, ldV, pr } = parabolicPolar(v, weight, sRef, cd0, k, eta, pAvail));
+        const w1 = weight - wFuel;
+        const br = ldV.map((ld) => (eta / (G * sfc)) * ld * Math.log(weight / w1));
+        uR = br.map((b) => b / 1000);
+        uE = br.map((b, i) => (v[i] > 0 ? b / (v[i] * 1000) : 0));
+        name = "IAI Heron";
+      }
+
+      const rMax = Math.max(...uR);
+      const rIdx = uR.indexOf(rMax);
+      const eMax = Math.max(...uE);
+      const eIdx = uE.indexOf(eMax);
+      const ldMax = (cd0 > 0 && k > 0) ? 1 / (2 * Math.sqrt(cd0 * k)) : null;
+
+      return {
+        performance: {
+          s_ref_m2: sRef,
+          aspect_ratio: ar,
+          range_max_km: rMax,
+          range_max_velocity_mps: v[rIdx],
+          endurance_max_hr: eMax,
+          endurance_max_velocity_mps: v[eIdx],
+          ld_max: ldMax,
+          cd0,
+          k_induced: k,
+        },
+        curves: {
+          velocity_mps: v,
+          range_km: uR,
+          endurance_hr: uE,
+          ld: ldV,
+          power_w: pr,
+          cl: clV,
+          cd: cdV,
+        },
+        output_text: [
+          `UAV Name: ${name}`,
+          `Reference Area S: ${sRef.toFixed(3)} m²`,
+          `Aspect Ratio AR: ${ar.toFixed(2)}`,
+          `Max Range (Rmax): ${rMax.toFixed(1)} km @ ${v[rIdx].toFixed(1)} m/s`,
+          `Max Endurance (Emax): ${eMax.toFixed(2)} hr @ ${v[eIdx].toFixed(1)} m/s`,
+          "----------------------------------------",
+          `CD0 (Zero Lift Drag): ${cd0.toFixed(5)}`,
+          `k (Induced Coefficient): ${k.toFixed(5)}`,
+          `Max Glide L/D Ratio: ${ldMax != null ? ldMax.toFixed(2) : "—"}`,
+          `VSPAero @ α≈3°: CL=${cl.toFixed(4)}, CD=${cd.toFixed(5)}, CDi≈${cdi.toFixed(5)}`,
+        ],
+        peaks: { rIdx, eIdx, rMax, eMax },
+      };
+    }
+
+    function lineChart(id, labels, data, color, xl, yl, peakIdx = null) {
       const ax = (xLabel, yLabel) => ({
         ...chartDefaults(),
         scales: {
@@ -342,18 +518,43 @@
           y: { ...chartDefaults().scales.y, title: { display: true, text: yLabel, color: "#8fa3c4" } },
         },
       });
+      const datasets = [{ data, borderColor: color, tension: 0.25, pointRadius: 0 }];
+      if (peakIdx != null && peakIdx >= 0) {
+        datasets.push({
+          data: labels.map((_, i) => (i === peakIdx ? data[i] : null)),
+          borderColor: color,
+          backgroundColor: color,
+          pointRadius: 6,
+          pointHoverRadius: 7,
+          showLine: false,
+        });
+      }
       charts[id] = new Chart($(id), {
         type: "line",
-        data: { labels, datasets: [{ data, borderColor: color, tension: 0.25, pointRadius: 0 }] },
+        data: { labels, datasets },
         options: ax(xl, yl),
       });
     }
 
     function renderResults(data) {
       const polar = data.polar || [];
-      const perf = data.performance || {};
-      const curves = data.curves || {};
+      let perf = data.performance || {};
+      let curves = data.curves || {};
+      let outputText = data.output_text || [];
+      let peaks = null;
       const color = VEHICLE_COLORS[data.vehicle] || "#3b9eff";
+
+      if (!curves.velocity_mps?.length && lastPayload) {
+        const computed = computeMatlabPerformance(
+          data.vehicle,
+          geometryParamsFromPayload(lastPayload),
+          polar,
+        );
+        perf = { ...perf, ...computed.performance };
+        curves = computed.curves;
+        outputText = computed.output_text;
+        peaks = computed.peaks;
+      }
 
       $("stats").innerHTML = `
         <div class="stat"><div class="k">Vehicle</div><div class="v" style="font-size:1rem">${data.vehicle}</div></div>
@@ -364,8 +565,8 @@
         <div class="stat"><div class="k">Glide L/D</div><div class="v">${perf.ld_max != null ? perf.ld_max.toFixed(2) : "—"}</div></div>`;
       $("stats").classList.remove("hidden");
 
-      if (data.output_text?.length) {
-        $("outputText").textContent = data.output_text.join("\n");
+      if (outputText.length) {
+        $("outputText").textContent = outputText.join("\n");
         $("outputPanel").classList.remove("hidden");
       } else {
         $("outputPanel").classList.add("hidden");
@@ -379,25 +580,13 @@
       destroyCharts();
 
       if (curves.velocity_mps?.length) {
-        const v = curves.velocity_mps.map((x) => x.toFixed(1));
+        const v = curves.velocity_mps.map((x) => x.toFixed(0));
         $("perfTitle").classList.remove("hidden");
         $("perfCharts").classList.remove("hidden");
-        lineChart("chartRange", v, curves.range_km, color, "Velocity (m/s)", "Range (km)");
-        lineChart("chartEndurance", v, curves.endurance_hr, color, "Velocity (m/s)", "Endurance (hr)");
+        lineChart("chartRange", v, curves.range_km, color, "Velocity (m/s)", "Range (km)", peaks?.rIdx ?? null);
+        lineChart("chartEndurance", v, curves.endurance_hr, color, "Velocity (m/s)", "Endurance (hr)", peaks?.eIdx ?? null);
         lineChart("chartLdV", v, curves.ld, color, "Velocity (m/s)", "L/D");
         lineChart("chartPower", v, (curves.power_w || []).map((p) => p / 1000), color, "Velocity (m/s)", "Power (kW)");
-        const polarPerf = (curves.cl || []).map((cl, i) => ({ x: curves.cd[i], y: cl }));
-        charts.polarPerf = new Chart($("chartPolarPerf"), {
-          type: "scatter",
-          data: { datasets: [{ data: polarPerf, borderColor: color, showLine: true, tension: 0.25, pointRadius: 0 }] },
-          options: {
-            ...chartDefaults(),
-            scales: {
-              x: { ...chartDefaults().scales.x, title: { display: true, text: "CD", color: "#8fa3c4" } },
-              y: { ...chartDefaults().scales.y, title: { display: true, text: "CL", color: "#8fa3c4" } },
-            },
-          },
-        });
       } else {
         $("perfTitle").classList.add("hidden");
         $("perfCharts").classList.add("hidden");
@@ -408,8 +597,7 @@
         const cls = polar.map((r) => r.cl);
         const cds = polar.map((r) => r.cd);
         const lds = polar.map((r) => (r.cd ? r.cl / r.cd : 0));
-        $("aeroTitle").classList.remove("hidden");
-        $("charts").classList.remove("hidden");
+        $("aeroSection").classList.remove("hidden");
         lineChart("chartCl", alphas, cls, color, "α (°)", "CL");
         lineChart("chartCd", alphas, cds, "#f59e0b", "α (°)", "CD");
         lineChart("chartLd", alphas, lds, "#22d3a6", "α (°)", "L/D");
@@ -425,8 +613,7 @@
           },
         });
       } else {
-        $("aeroTitle").classList.add("hidden");
-        $("charts").classList.add("hidden");
+        $("aeroSection").classList.add("hidden");
       }
 
       setStatus("Done — " + data.case_name, "ok");
@@ -447,11 +634,12 @@
     $("runBtn").onclick = async () => {
       $("runBtn").disabled = true;
       setStatus("Running OpenVSP… (1–5 min)", "busy");
+      lastPayload = buildPayload();
       try {
         const res = await fetch(apiBase() + "/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildPayload()),
+          body: JSON.stringify(lastPayload),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail) || res.statusText);
