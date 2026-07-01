@@ -206,6 +206,43 @@
       "aai-shadow": "#22c55e",
       "iai-heron": "#a855f7",
     };
+    const LOCAL_MODEL_PARAMETERS = {
+      "hero-400ec": [
+        { key: "wingSpan", label: "Wing Span (m)", default: 2.400 },
+        { key: "wingChord", label: "Wing Chord (m)", default: 0.360 },
+        { key: "fuselageLength", label: "Fuselage Length (m)", default: 2.100 },
+        { key: "tailSpan", label: "Tail Span (m)", default: 0.6832 },
+        { key: "tailChord", label: "Tail Chord (m)", default: 0.205 },
+      ],
+      "shahed-136": [
+        { key: "semiSpan", label: "Wing Semi-span (m)", default: 2.500 },
+        { key: "rootChord", label: "Root Chord (m)", default: 2.276 },
+        { key: "tipChord", label: "Tip Chord (m)", default: 0.440 },
+        { key: "fuselageLength", label: "Fuselage Length (m)", default: 3.500 },
+      ],
+      "aai-shadow": [
+        { key: "wingSpan", label: "Wing Span (m)", default: 4.68846 },
+        { key: "wingRootChord", label: "Wing Root Chord (m)", default: 0.6586 },
+        { key: "wingTipChord", label: "Wing Tip Chord (m)", default: 0.6586 },
+        { key: "fuselageLength", label: "Fuselage Length (m)", default: 1.6300 },
+        { key: "tailSpan", label: "Tail Span (m)", default: 1.4500 },
+        { key: "tailRootChord", label: "Tail Root Chord (m)", default: 0.4000 },
+        { key: "tailTipChord", label: "Tail Tip Chord (m)", default: 0.4000 },
+      ],
+      "iai-heron": [
+        { key: "wingSpan", label: "Wing Span (m)", default: 16.677 },
+        { key: "fuselageLength", label: "Fuselage Length (m)", default: 8.50 },
+        { key: "sec1Span", label: "Section 1 Span (m)", default: 1.77872 },
+        { key: "sec1RootChord", label: "Section 1 Root Chord (m)", default: 1.29 },
+        { key: "sec1TipChord", label: "Section 1 Tip Chord (m)", default: 1.29 },
+        { key: "sec2Span", label: "Section 2 Span (m)", default: 6.56 },
+        { key: "sec2RootChord", label: "Section 2 Root Chord (m)", default: 1.29 },
+        { key: "sec2TipChord", label: "Section 2 Tip Chord (m)", default: 0.64 },
+        { key: "tailSpan", label: "Tail Span (m)", default: 3.3 },
+        { key: "tailRootChord", label: "Tail Root Chord (m)", default: 0.81 },
+        { key: "tailTipChord", label: "Tail Tip Chord (m)", default: 0.81 },
+      ],
+    };
     let models = [], charts = {};
     const $ = (id) => document.getElementById(id);
 
@@ -233,9 +270,15 @@
 
     function destroyCharts() { Object.values(charts).forEach((c) => c.destroy()); charts = {}; }
 
+    function modelParameters(model) {
+      // Prefer the MATLAB-aligned local schema so the standalone HTML works even
+      // while Railway is still deploying an older /api/models response.
+      return LOCAL_MODEL_PARAMETERS[model.id] || model.parameters || [];
+    }
+
     function renderGeomFields(model) {
       $("geomFields").innerHTML = "";
-      (model.parameters || []).forEach((field) => {
+      modelParameters(model).forEach((field) => {
         const key = typeof field === "string" ? field : field.key;
         const label = typeof field === "string" ? key : field.label;
         const def = typeof field === "string" ? "" : field.default;
@@ -266,7 +309,7 @@
         re: +$("re").value,
         runVspaero: $("runVspaero").checked,
       };
-      (model?.parameters || []).forEach((field) => {
+      modelParameters(model || { id: vehicle }).forEach((field) => {
         const key = typeof field === "string" ? field : field.key;
         const v = +$(`f_${key}`)?.value;
         if (!Number.isNaN(v)) body[key] = v;
