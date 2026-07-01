@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 from .model_registry import UavModel, default_geometry_params
 
@@ -145,27 +144,20 @@ def build_vspaero_commands(
   reynolds: float,
 ) -> list[str]:
   alpha_npts = max(2, int((alpha_end - alpha_start) / alpha_step) + 1)
-  stem = Path(geometry_path).stem
   wing_names = model.wing_geom_names
   wing_lookup = " ".join(
     f'if (_wid.size() == 0) {{ _wid = FindGeomsWithName("{name}"); }}' for name in wing_names[1:]
   )
   wing_init = f'array<string> _wid = FindGeomsWithName("{wing_names[0]}"); {wing_lookup}'
   geom_set = model.vspaero_geom_set
-  analysis_method = model.vspaero_analysis_method
   return [
     f'SetVSP3FileName("{geometry_path}");',
     'SetAnalysisInputDefaults("VSPAEROComputeGeometry");',
-    (
-      'array<int> _am = GetIntAnalysisInput("VSPAEROComputeGeometry", "AnalysisMethod"); '
-      f"_am[0] = {analysis_method}; "
-      'SetIntAnalysisInput("VSPAEROComputeGeometry", "AnalysisMethod", _am);'
-    ),
+    f'array<int> _cgs; _cgs.push_back({geom_set}); SetIntAnalysisInput("VSPAEROComputeGeometry", "GeomSet", _cgs, 0);',
     'ExecAnalysis("VSPAEROComputeGeometry");',
     'SetAnalysisInputDefaults("VSPAEROSweep");',
     f'array<int> _gs; _gs.push_back({geom_set}); SetIntAnalysisInput("VSPAEROSweep", "GeomSet", _gs, 0);',
     'array<int> _rf; _rf.push_back(1); SetIntAnalysisInput("VSPAEROSweep", "RefFlag", _rf, 0);',
-    f'array<string> _pfx; _pfx.push_back("{stem}"); SetStringAnalysisInput("VSPAEROSweep", "Prefix", _pfx, 0);',
     f'{wing_init} SetStringAnalysisInput("VSPAEROSweep", "WingID", _wid, 0);',
     f'array<double> _a0; _a0.push_back({alpha_start}); SetDoubleAnalysisInput("VSPAEROSweep", "AlphaStart", _a0, 0);',
     f'array<double> _a1; _a1.push_back({alpha_end}); SetDoubleAnalysisInput("VSPAEROSweep", "AlphaEnd", _a1, 0);',

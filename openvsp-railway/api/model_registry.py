@@ -23,9 +23,9 @@ class UavModel:
     default_alpha_end: float = 12.0
     default_alpha_step: float = 2.0
     default_re: float = 1_000_000.0
-    # VSPAero: GeomSet and AnalysisMethod must match each .vsp3 (see VSPAEROSettings).
+    # VSPAero: GeomSet must match each .vsp3 (see VSPAEROSettings). AnalysisMethod is read from the file.
     vspaero_geom_set: int = 0
-    vspaero_analysis_method: int = 0  # 0 = panel, 1 = vortex lattice
+    vspaero_analysis_method: int = 0  # informational; stored in .vsp3, not set via Analysis API in 3.51
     wing_geom_names: tuple[str, ...] = ("WingGeom", "wing")
 
 
