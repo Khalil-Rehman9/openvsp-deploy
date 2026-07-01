@@ -6,7 +6,14 @@ mkdir -p /data/geometry /data/results
 
 # Bootstrap .vsp3 models from zip baked into image (fast — no SSH upload needed)
 if [ -f /opt/bootstrap/uav-models.zip ]; then
-  if [ ! -s /data/geometry/hero-400ec.vsp3 ]; then
+  need_extract=0
+  for f in hero-400ec.vsp3 shahed-136.vsp3 aai-shadow.vsp3 iai-heron.vsp3; do
+    if [ ! -s "/data/geometry/$f" ]; then
+      need_extract=1
+      break
+    fi
+  done
+  if [ "$need_extract" = "1" ]; then
     echo "Extracting UAV models from uav-models.zip ..."
     unzip -o -q /opt/bootstrap/uav-models.zip -d /data/geometry
     ls -lh /data/geometry/*.vsp3 2>/dev/null || true
