@@ -43,12 +43,13 @@ def parse_vspaero_stdout(text: str) -> list[dict[str, float]]:
             continue
         alpha = float(match.group(3))
         cl = float(match.group(7))
+        cdi = float(match.group(9))
         cd = float(match.group(10))
         key = round(alpha, 6)
         if key in seen_alphas:
             continue
         seen_alphas.add(key)
-        rows.append({"alpha": alpha, "cl": cl, "cd": cd})
+        rows.append({"alpha": alpha, "cl": cl, "cd": cd, "cdi": cdi})
 
     rows.sort(key=lambda r: r["alpha"])
     return rows
@@ -76,7 +77,7 @@ def parse_polar_file(path: Path) -> list[dict[str, float]]:
         nums = _parse_floats(line)
         if len(nums) < 10:
             continue
-        rows.append({"alpha": nums[2], "cl": nums[6], "cd": nums[9]})
+        rows.append({"alpha": nums[2], "cl": nums[6], "cd": nums[9], "cdi": nums[8]})
 
     rows.sort(key=lambda r: r["alpha"])
     return rows

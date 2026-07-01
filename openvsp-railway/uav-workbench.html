@@ -172,11 +172,24 @@
     <main>
       <div id="status" class="status"></div>
       <div class="stats hidden" id="stats"></div>
+      <div class="panel hidden" id="outputPanel" style="margin-bottom:1rem">
+        <h3 style="margin-top:0">Performance summary</h3>
+        <pre id="outputText" style="margin:0;font-size:0.85rem;color:var(--muted);white-space:pre-wrap"></pre>
+      </div>
+      <h3 class="hidden" id="perfTitle" style="margin:0 0 0.75rem">Mission performance (MATLAB curves)</h3>
+      <div class="charts hidden" id="perfCharts">
+        <div class="chart-box"><h3>Range vs velocity</h3><canvas id="chartRange"></canvas></div>
+        <div class="chart-box"><h3>Endurance vs velocity</h3><canvas id="chartEndurance"></canvas></div>
+        <div class="chart-box"><h3>L/D vs velocity</h3><canvas id="chartLdV"></canvas></div>
+        <div class="chart-box"><h3>Power vs velocity</h3><canvas id="chartPower"></canvas></div>
+        <div class="chart-box"><h3>Drag polar (CL vs CD)</h3><canvas id="chartPolarPerf"></canvas></div>
+      </div>
+      <h3 class="hidden" id="aeroTitle" style="margin:1.5rem 0 0.75rem">VSPAero polar sweep</h3>
       <div class="charts hidden" id="charts">
         <div class="chart-box"><h3>CL vs α</h3><canvas id="chartCl"></canvas></div>
         <div class="chart-box"><h3>CD vs α</h3><canvas id="chartCd"></canvas></div>
         <div class="chart-box"><h3>L/D vs α</h3><canvas id="chartLd"></canvas></div>
-        <div class="chart-box"><h3>Drag polar</h3><canvas id="chartPolar"></canvas></div>
+        <div class="chart-box"><h3>Drag polar (α sweep)</h3><canvas id="chartPolar"></canvas></div>
       </div>
       <div class="panel hidden" id="tablePanel" style="margin-top:1rem">
         <h3 style="margin-top:0">Polar data</h3>
@@ -187,12 +200,11 @@
 
   <script>
     const DEFAULT_API = "https://openvsp-api-production.up.railway.app";
-    const FIELD_META = {
-      span: { label: "Wing span (m)", step: "0.01", placeholder: "4.0" },
-      rootChord: { label: "Root chord (m)", step: "0.01", placeholder: "0.5" },
-      tipChord: { label: "Tip chord (m)", step: "0.01", placeholder: "0.25" },
-      outerRootChord: { label: "Outer root chord (m)", step: "0.01" },
-      outerTipChord: { label: "Outer tip chord (m)", step: "0.01" },
+    const VEHICLE_COLORS = {
+      "hero-400ec": "#3b9eff",
+      "shahed-136": "#ef4444",
+      "aai-shadow": "#22c55e",
+      "iai-heron": "#a855f7",
     };
     let models = [], charts = {};
     const $ = (id) => document.getElementById(id);
@@ -223,10 +235,12 @@
 
     function renderGeomFields(model) {
       $("geomFields").innerHTML = "";
-      (model.parameters || []).forEach((key) => {
-        const m = FIELD_META[key] || { label: key, step: "0.01", placeholder: "" };
+      (model.parameters || []).forEach((field) => {
+        const key = typeof field === "string" ? field : field.key;
+        const label = typeof field === "string" ? key : field.label;
+        const def = typeof field === "string" ? "" : field.default;
         const d = document.createElement("div");
-        d.innerHTML = `<label for="f_${key}">${m.label}</label><input id="f_${key}" type="number" step="${m.step}" placeholder="${m.placeholder || ""}" />`;
+        d.innerHTML = `<label for="f_${key}">${label}</label><input id="f_${key}" type="number" step="0.0001" value="${def ?? ""}" />`;
         $("geomFields").appendChild(d);
       });
     }
@@ -252,47 +266,109 @@
         re: +$("re").value,
         runVspaero: $("runVspaero").checked,
       };
-      (model?.parameters || []).forEach((key) => {
+      (model?.parameters || []).forEach((field) => {
+        const key = typeof field === "string" ? field : field.key;
         const v = +$(`f_${key}`)?.value;
         if (!Number.isNaN(v)) body[key] = v;
       });
       return body;
     }
 
+    function lineChart(id, labels, data, color, xl, yl) {
+      const ax = (xLabel, yLabel) => ({
+        ...chartDefaults(),
+        scales: {
+          x: { ...chartDefaults().scales.x, title: { display: true, text: xLabel, color: "#8fa3c4" } },
+          y: { ...chartDefaults().scales.y, title: { display: true, text: yLabel, color: "#8fa3c4" } },
+        },
+      });
+      charts[id] = new Chart($(id), {
+        type: "line",
+        data: { labels, datasets: [{ data, borderColor: color, tension: 0.25, pointRadius: 0 }] },
+        options: ax(xl, yl),
+      });
+    }
+
     function renderResults(data) {
       const polar = data.polar || [];
       const perf = data.performance || {};
+      const curves = data.curves || {};
+      const color = VEHICLE_COLORS[data.vehicle] || "#3b9eff";
+
       $("stats").innerHTML = `
         <div class="stat"><div class="k">Vehicle</div><div class="v" style="font-size:1rem">${data.vehicle}</div></div>
-        <div class="stat"><div class="k">L/D max</div><div class="v">${perf.ld_max != null ? perf.ld_max.toFixed(2) : "—"}</div></div>
-        <div class="stat"><div class="k">CL @ L/D max</div><div class="v">${perf.cl_at_ld_max?.toFixed(3) ?? "—"}</div></div>
-        <div class="stat"><div class="k">CD @ L/D max</div><div class="v">${perf.cd_at_ld_max?.toFixed(4) ?? "—"}</div></div>
-        <div class="stat"><div class="k">Points</div><div class="v">${polar.length}</div></div>`;
+        <div class="stat"><div class="k">S (m²)</div><div class="v">${perf.s_ref_m2?.toFixed(2) ?? "—"}</div></div>
+        <div class="stat"><div class="k">AR</div><div class="v">${perf.aspect_ratio?.toFixed(2) ?? "—"}</div></div>
+        <div class="stat"><div class="k">R max (km)</div><div class="v">${perf.range_max_km?.toFixed(1) ?? "—"}</div></div>
+        <div class="stat"><div class="k">E max (hr)</div><div class="v">${perf.endurance_max_hr?.toFixed(2) ?? "—"}</div></div>
+        <div class="stat"><div class="k">Glide L/D</div><div class="v">${perf.ld_max != null ? perf.ld_max.toFixed(2) : "—"}</div></div>`;
       $("stats").classList.remove("hidden");
+
+      if (data.output_text?.length) {
+        $("outputText").textContent = data.output_text.join("\n");
+        $("outputPanel").classList.remove("hidden");
+      } else {
+        $("outputPanel").classList.add("hidden");
+      }
+
       $("polarBody").innerHTML = polar.map((r) =>
         `<tr><td>${r.alpha}</td><td>${r.cl.toFixed(4)}</td><td>${r.cd.toFixed(5)}</td><td>${r.cd ? (r.cl/r.cd).toFixed(2) : "—"}</td></tr>`
       ).join("");
       $("tablePanel").classList.toggle("hidden", !polar.length);
-      if (!polar.length) { $("charts").classList.add("hidden"); setStatus("No polar data — try with VSPAero enabled.", "ok"); return; }
 
-      const alphas = polar.map((r) => r.alpha);
-      const cls = polar.map((r) => r.cl);
-      const cds = polar.map((r) => r.cd);
-      const lds = polar.map((r) => (r.cd ? r.cl / r.cd : 0));
       destroyCharts();
-      $("charts").classList.remove("hidden");
-      const ax = (xl, yl) => ({ ...chartDefaults(), scales: {
-        x: { ...chartDefaults().scales.x, title: { display: true, text: xl, color: "#8fa3c4" } },
-        y: { ...chartDefaults().scales.y, title: { display: true, text: yl, color: "#8fa3c4" } },
-      }});
-      charts.cl = new Chart($("chartCl"), { type: "line", data: { labels: alphas, datasets: [{ data: cls, borderColor: "#3b9eff", tension: 0.25 }] }, options: ax("α (°)", "CL") });
-      charts.cd = new Chart($("chartCd"), { type: "line", data: { labels: alphas, datasets: [{ data: cds, borderColor: "#f59e0b", tension: 0.25 }] }, options: ax("α (°)", "CD") });
-      charts.ld = new Chart($("chartLd"), { type: "line", data: { labels: alphas, datasets: [{ data: lds, borderColor: "#22d3a6", tension: 0.25 }] }, options: ax("α (°)", "L/D") });
-      charts.polar = new Chart($("chartPolar"), {
-        type: "scatter",
-        data: { datasets: [{ data: cls.map((cl, i) => ({ x: cl, y: cds[i] })), borderColor: "#a78bfa", showLine: true, tension: 0.25 }] },
-        options: ax("CL", "CD"),
-      });
+
+      if (curves.velocity_mps?.length) {
+        const v = curves.velocity_mps.map((x) => x.toFixed(1));
+        $("perfTitle").classList.remove("hidden");
+        $("perfCharts").classList.remove("hidden");
+        lineChart("chartRange", v, curves.range_km, color, "Velocity (m/s)", "Range (km)");
+        lineChart("chartEndurance", v, curves.endurance_hr, color, "Velocity (m/s)", "Endurance (hr)");
+        lineChart("chartLdV", v, curves.ld, color, "Velocity (m/s)", "L/D");
+        lineChart("chartPower", v, (curves.power_w || []).map((p) => p / 1000), color, "Velocity (m/s)", "Power (kW)");
+        const polarPerf = (curves.cl || []).map((cl, i) => ({ x: curves.cd[i], y: cl }));
+        charts.polarPerf = new Chart($("chartPolarPerf"), {
+          type: "scatter",
+          data: { datasets: [{ data: polarPerf, borderColor: color, showLine: true, tension: 0.25, pointRadius: 0 }] },
+          options: {
+            ...chartDefaults(),
+            scales: {
+              x: { ...chartDefaults().scales.x, title: { display: true, text: "CD", color: "#8fa3c4" } },
+              y: { ...chartDefaults().scales.y, title: { display: true, text: "CL", color: "#8fa3c4" } },
+            },
+          },
+        });
+      } else {
+        $("perfTitle").classList.add("hidden");
+        $("perfCharts").classList.add("hidden");
+      }
+
+      if (polar.length) {
+        const alphas = polar.map((r) => r.alpha);
+        const cls = polar.map((r) => r.cl);
+        const cds = polar.map((r) => r.cd);
+        const lds = polar.map((r) => (r.cd ? r.cl / r.cd : 0));
+        $("aeroTitle").classList.remove("hidden");
+        $("charts").classList.remove("hidden");
+        lineChart("chartCl", alphas, cls, color, "α (°)", "CL");
+        lineChart("chartCd", alphas, cds, "#f59e0b", "α (°)", "CD");
+        lineChart("chartLd", alphas, lds, "#22d3a6", "α (°)", "L/D");
+        charts.polar = new Chart($("chartPolar"), {
+          type: "scatter",
+          data: { datasets: [{ data: cls.map((cl, i) => ({ x: cds[i], y: cl })), borderColor: "#a78bfa", showLine: true, tension: 0.25 }] },
+          options: {
+            ...chartDefaults(),
+            scales: {
+              x: { ...chartDefaults().scales.x, title: { display: true, text: "CD", color: "#8fa3c4" } },
+              y: { ...chartDefaults().scales.y, title: { display: true, text: "CL", color: "#8fa3c4" } },
+            },
+          },
+        });
+      } else {
+        $("aeroTitle").classList.add("hidden");
+        $("charts").classList.add("hidden");
+      }
+
       setStatus("Done — " + data.case_name, "ok");
     }
 

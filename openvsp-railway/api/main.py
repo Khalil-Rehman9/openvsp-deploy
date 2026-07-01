@@ -16,9 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from openvsp_mcp.fastapi_app import create_app as create_openvsp_app
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from .model_registry import MODELS, get_model
+from .model_registry import MODELS, default_geometry_params, get_model, input_keys
+from .performance_matlab import compute_matlab_performance
 from .polar_parser import (
     compute_performance,
     find_polar_near,
@@ -43,11 +44,6 @@ def _workbench_index() -> Path:
 
 class AnalyzeRequest(BaseModel):
     vehicle: str = Field(..., description="hero-400ec | shahed-136 | aai-shadow | iai-heron")
-    span: float | None = None
-    rootChord: float | None = None
-    tipChord: float | None = None
-    outerRootChord: float | None = None
-    outerTipChord: float | None = None
     mach: float | None = None
     alphaStart: float | None = None
     alphaEnd: float | None = None
@@ -56,7 +52,7 @@ class AnalyzeRequest(BaseModel):
     velocityMps: float = 30.0
     runVspaero: bool = True
 
-    model_config = {"populate_by_name": True}
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class AnalyzeResponse(BaseModel):
@@ -67,7 +63,20 @@ class AnalyzeResponse(BaseModel):
     polar_file: str | None
     polar: list[dict[str, float]]
     performance: dict[str, float | None]
+    curves: dict[str, list[float]] | None = None
+    output_text: list[str] | None = None
+    geometry_params: dict[str, float] | None = None
     vspaero_result: str | None
+
+
+def _extract_geometry_params(body: AnalyzeRequest, model) -> dict[str, float]:
+    merged = default_geometry_params(model)
+    raw = body.model_dump(exclude_none=True, by_alias=True)
+    allowed = input_keys(model)
+    for key, value in raw.items():
+        if key in allowed:
+            merged[key] = float(value)
+    return merged
 
 
 def create_app() -> FastAPI:
@@ -161,7 +170,10 @@ def create_app() -> FastAPI:
                 "id": m.id,
                 "label": m.label,
                 "geometry_file": m.geometry_file,
-                "parameters": [t.json_key for t in m.parm_targets],
+                "parameters": [
+                    {"key": f.key, "label": f.label, "default": f.default}
+                    for f in m.input_fields
+                ],
                 "defaults": {
                     "mach": m.default_mach,
                     "alphaStart": m.default_alpha_start,
@@ -187,20 +199,10 @@ def create_app() -> FastAPI:
                 detail=f"Geometry not on volume: {geom_path}. Upload .vsp3 to /data/geometry/.",
             )
 
-        params = {
-            k: v
-            for k, v in {
-                "span": body.span,
-                "rootChord": body.rootChord,
-                "tipChord": body.tipChord,
-                "outerRootChord": body.outerRootChord,
-                "outerTipChord": body.outerTipChord,
-            }.items()
-            if v is not None
-        }
+        geom_params = _extract_geometry_params(body, model)
 
         try:
-            commands = build_geometry_commands(model, params)
+            commands = build_geometry_commands(model, geom_params)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -244,7 +246,14 @@ def create_app() -> FastAPI:
             polar_rows = parse_vspaero_stdout(result.stdout)
         if not polar_rows and polar_path:
             polar_rows = parse_polar_file(polar_path)
-        performance = compute_performance(polar_rows, velocity_mps=body.velocityMps)
+
+        polar_perf = compute_performance(polar_rows, velocity_mps=body.velocityMps)
+        matlab_perf, curves, output_text = compute_matlab_performance(
+            model.id,
+            geom_params,
+            polar_rows,
+        )
+        performance = {**polar_perf, **matlab_perf}
 
         return AnalyzeResponse(
             vehicle=model.id,
@@ -254,6 +263,9 @@ def create_app() -> FastAPI:
             polar_file=str(polar_path) if polar_path else None,
             polar=polar_rows,
             performance=performance,
+            curves=curves,
+            output_text=output_text,
+            geometry_params=geom_params,
             vspaero_result="vspaero" if result.vspaero_ran else None,
         )
 
