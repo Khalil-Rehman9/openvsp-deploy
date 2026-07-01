@@ -297,6 +297,23 @@
       $("alphaStep").value = d.alphaStep ?? 2;
     }
 
+    function applyLegacyApiFields(vehicle, body) {
+      // Railway may still be on the pre-MATLAB API that only reads span/rootChord/etc.
+      if (vehicle === "hero-400ec" && body.wingSpan != null) body.span = body.wingSpan;
+      if (vehicle === "shahed-136" && body.semiSpan != null) body.span = body.semiSpan * 2;
+      if (vehicle === "aai-shadow") {
+        if (body.wingRootChord != null) body.rootChord = body.wingRootChord;
+        if (body.wingTipChord != null) body.tipChord = body.wingTipChord;
+      }
+      if (vehicle === "iai-heron") {
+        if (body.sec1RootChord != null) body.rootChord = body.sec1RootChord;
+        if (body.sec1TipChord != null) body.tipChord = body.sec1TipChord;
+        if (body.sec2RootChord != null) body.outerRootChord = body.sec2RootChord;
+        if (body.sec2TipChord != null) body.outerTipChord = body.sec2TipChord;
+      }
+      return body;
+    }
+
     function buildPayload() {
       const vehicle = $("vehicle").value;
       const model = models.find((m) => m.id === vehicle);
@@ -314,7 +331,7 @@
         const v = +$(`f_${key}`)?.value;
         if (!Number.isNaN(v)) body[key] = v;
       });
-      return body;
+      return applyLegacyApiFields(vehicle, body);
     }
 
     function lineChart(id, labels, data, color, xl, yl) {
