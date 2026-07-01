@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# Volume mount at /data replaces image dirs — recreate at runtime
+mkdir -p /data/geometry /data/results
+
 # Railway injects PORT; default to 8000 for local runs
 PORT="${PORT:-8000}"
 

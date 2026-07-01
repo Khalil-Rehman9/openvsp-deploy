@@ -49,8 +49,6 @@ ENV VSPAERO_BIN=/usr/local/bin/vspaero
 ENV GEOMETRY_DIR=/data/geometry
 ENV RESULTS_DIR=/data/results
 
-RUN mkdir -p /data/geometry /data/results
-
 WORKDIR /app
 
 EXPOSE 8000
@@ -58,7 +56,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f "http://127.0.0.1:${PORT:-8000}/health" || exit 1
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# Strip Windows CRLF if present — otherwise Linux sees shebang as /bin/sh\r
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/docker-entrypoint.sh"]
