@@ -320,7 +320,7 @@
       destroyCharts();
       $("charts").classList.remove("hidden");
 
-      charts.polar = new Chart($("chartPolar"), {
+      charts.cl = new Chart($("chartCl"), {
         type: "line",
         data: { labels: alphas, datasets: [{ data: cls, borderColor: "#3b9eff", tension: 0.25, pointRadius: 4 }] },
         options: { ...chartDefaults(), scales: { ...chartDefaults().scales, x: { ...chartDefaults().scales.x, title: { display: true, text: "α (deg)", color: "#8fa3c4" } }, y: { ...chartDefaults().scales.y, title: { display: true, text: "CL", color: "#8fa3c4" } } } },
