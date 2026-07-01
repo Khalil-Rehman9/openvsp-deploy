@@ -56,8 +56,9 @@ def parse_vspaero_stdout(text: str) -> list[dict[str, float]]:
 
 def parse_polar_file(path: Path) -> list[dict[str, float]]:
     """
-    Parse a .polar or similar whitespace-delimited aero results file.
-    Returns rows with alpha, cl, cd when detectable.
+    Parse a VSPAero .polar file.
+
+    Data rows use: Beta, Mach, AoA, Re/1e6, CLo, CLi, CLtot, CDo, CDi, CDtot, ...
     """
     if not path.exists():
         return []
@@ -67,11 +68,17 @@ def parse_polar_file(path: Path) -> list[dict[str, float]]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        nums = _parse_floats(line)
-        if len(nums) < 3:
+        if not re.search(r"[-+]?(?:\d*\.\d+|\d+)", line):
             continue
-        # Common VSPAero column order: Alpha, CL, CD, ...
-        rows.append({"alpha": nums[0], "cl": nums[1], "cd": nums[2]})
+        if re.search(r"[A-Za-z]", line.replace("e", "").replace("E", "")):
+            # Skip banner/header lines that contain column labels.
+            continue
+        nums = _parse_floats(line)
+        if len(nums) < 10:
+            continue
+        rows.append({"alpha": nums[2], "cl": nums[6], "cd": nums[9]})
+
+    rows.sort(key=lambda r: r["alpha"])
     return rows
 
 

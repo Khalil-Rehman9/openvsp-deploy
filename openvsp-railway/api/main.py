@@ -239,9 +239,11 @@ def create_app() -> FastAPI:
             search_dirs,
             geometry_stem=geom_path.stem,
         )
-        polar_rows = parse_polar_file(polar_path) if polar_path else []
-        if not polar_rows and result.vspaero_ran:
+        polar_rows: list[dict[str, float]] = []
+        if result.vspaero_ran:
             polar_rows = parse_vspaero_stdout(result.stdout)
+        if not polar_rows and polar_path:
+            polar_rows = parse_polar_file(polar_path)
         performance = compute_performance(polar_rows, velocity_mps=body.velocityMps)
 
         return AnalyzeResponse(

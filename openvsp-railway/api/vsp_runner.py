@@ -10,7 +10,7 @@ from pathlib import Path
 
 from openvsp_mcp.core import OPENVSP_BIN
 
-_OK_EXIT_CODES = {0, 160, 224}
+_OK_EXIT_CODES = {0, 96, 160, 224}
 
 
 @dataclass(frozen=True)
