@@ -16,9 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install official OpenVSP .deb (includes vsp, vspscript, vspaero)
+# Install official OpenVSP .deb (includes vsp, vspscript, vspaero).
+# The .deb postinst calls desktop-file-install for a .desktop menu entry;
+# desktop-file-utils must be present or dpkg configure fails in Docker.
 RUN wget -q -O /tmp/openvsp.deb "${OPENVSP_DEB_URL}" \
     && apt-get update \
+    && apt-get install -y --no-install-recommends desktop-file-utils \
     && apt-get install -y /tmp/openvsp.deb \
     && rm /tmp/openvsp.deb \
     && apt-get clean \
@@ -35,8 +38,8 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     "git+https://github.com/Three-Little-Birds/openvsp-mcp.git" \
     "uvicorn[standard]>=0.30"
 
-ENV OPENVSP_BIN=/usr/bin/vsp
-ENV VSPAERO_BIN=/usr/bin/vspaero
+ENV OPENVSP_BIN=/usr/local/bin/vsp
+ENV VSPAERO_BIN=/usr/local/bin/vspaero
 ENV GEOMETRY_DIR=/data/geometry
 ENV RESULTS_DIR=/data/results
 
