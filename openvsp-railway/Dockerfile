@@ -8,9 +8,12 @@ ARG OPENVSP_DEB_URL=https://openvsp.org/zips/current/linux/OpenVSP-${OPENVSP_VER
 
 # System deps: Python for openvsp-mcp REST API
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     ca-certificates \
     curl \
+    git \
     python3 \
+    python3-dev \
     python3-pip \
     python3-venv \
     wget \
@@ -34,7 +37,8 @@ RUN VSP_PATH="$(command -v vsp || command -v vspscript || true)" \
     && "$VSP_PATH" --version || true
 
 # REST wrapper around OpenVSP (FastAPI)
-RUN pip3 install --no-cache-dir --break-system-packages \
+RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip setuptools wheel \
+    && pip3 install --no-cache-dir --break-system-packages \
     "git+https://github.com/Three-Little-Birds/openvsp-mcp.git" \
     "uvicorn[standard]>=0.30"
 
