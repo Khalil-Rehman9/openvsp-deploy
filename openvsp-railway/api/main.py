@@ -15,14 +15,18 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from openvsp_mcp.core import execute_openvsp
 from openvsp_mcp.fastapi_app import create_app as create_openvsp_app
-from openvsp_mcp.models import OpenVSPRequest, VSPCommand
 from pydantic import BaseModel, Field
 
 from .model_registry import MODELS, get_model
-from .polar_parser import compute_performance, find_polar_near, parse_polar_file
-from .script_builder import build_export_commands, build_geometry_commands, build_vspaero_commands
+from .polar_parser import (
+    compute_performance,
+    find_polar_near,
+    parse_polar_file,
+    parse_vspaero_stdout,
+)
+from .script_builder import build_geometry_commands, build_vspaero_commands
+from .vsp_runner import run_openvsp_script
 
 GEOMETRY_DIR = Path(os.environ.get("GEOMETRY_DIR", "/data/geometry"))
 RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", "/data/results"))
@@ -219,26 +223,25 @@ def create_app() -> FastAPI:
 
         case_name = f"{model.id}-{int(alpha_start)}-{int(alpha_end)}"
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        commands.extend(build_export_commands(str(RESULTS_DIR), case_name))
-
-        request = OpenVSPRequest(
-            geometry_file=str(geom_path),
-            set_commands=[VSPCommand(command=c) for c in commands],
-            # VSPAero runs inside the .vspscript via ExecAnalysis when enabled.
-            run_vspaero=False,
-            case_name=case_name,
-        )
 
         try:
-            result = execute_openvsp(request)
+            result = run_openvsp_script(
+                str(geom_path),
+                commands,
+                vspaero_expected=body.runVspaero,
+            )
         except RuntimeError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+        search_dirs = [geom_path.parent, RESULTS_DIR, Path.cwd()]
         polar_path = find_polar_near(
             case_name,
-            [RESULTS_DIR, geom_path.parent, geom_path.parent.parent, Path.cwd()],
+            search_dirs,
+            geometry_stem=geom_path.stem,
         )
         polar_rows = parse_polar_file(polar_path) if polar_path else []
+        if not polar_rows and result.vspaero_ran:
+            polar_rows = parse_vspaero_stdout(result.stdout)
         performance = compute_performance(polar_rows, velocity_mps=body.velocityMps)
 
         return AnalyzeResponse(
@@ -249,7 +252,7 @@ def create_app() -> FastAPI:
             polar_file=str(polar_path) if polar_path else None,
             polar=polar_rows,
             performance=performance,
-            vspaero_result=result.result_path,
+            vspaero_result="vspaero" if result.vspaero_ran else None,
         )
 
     return app

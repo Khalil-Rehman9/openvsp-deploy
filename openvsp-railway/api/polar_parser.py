@@ -10,6 +10,50 @@ def _parse_floats(line: str) -> list[float]:
     return [float(x) for x in re.findall(r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?", line)]
 
 
+_VSPAERO_RESULT_ROW = re.compile(
+    r"^\s*(\d+)\s+"
+    r"([\d.eE+-]+)\s+"
+    r"([\d.eE+-]+)\s+"
+    r"([\d.eE+-]+)\s+"
+    r"([\d.eE+-]+)\s+"
+    r"([\d.eE+-]+)\s+"
+    r"([\d.eE+-]+)\s+"
+    r"([\d.eE+-]+)\s+"
+    r"([\d.eE+-]+)\s+"
+    r"([\d.eE+-]+)\s+"
+    r"([\d.eE+-]+)"
+)
+
+
+def parse_vspaero_stdout(text: str) -> list[dict[str, float]]:
+    """
+    Extract converged alpha / CL / CD rows from VSPAero console output.
+
+    Uses wake-iteration result lines (Iter Mach AoA Beta CLo CLi CLtot CDo CDi CDtot L/D ...).
+    """
+    rows: list[dict[str, float]] = []
+    seen_alphas: set[float] = set()
+
+    for raw in text.splitlines():
+        match = _VSPAERO_RESULT_ROW.match(raw)
+        if not match:
+            continue
+        wake_iter = int(match.group(1))
+        if wake_iter != 3:
+            continue
+        alpha = float(match.group(3))
+        cl = float(match.group(7))
+        cd = float(match.group(10))
+        key = round(alpha, 6)
+        if key in seen_alphas:
+            continue
+        seen_alphas.add(key)
+        rows.append({"alpha": alpha, "cl": cl, "cd": cd})
+
+    rows.sort(key=lambda r: r["alpha"])
+    return rows
+
+
 def parse_polar_file(path: Path) -> list[dict[str, float]]:
     """
     Parse a .polar or similar whitespace-delimited aero results file.
@@ -31,8 +75,16 @@ def parse_polar_file(path: Path) -> list[dict[str, float]]:
     return rows
 
 
-def find_polar_near(case_name: str, search_dirs: list[Path]) -> Path | None:
+def find_polar_near(
+    case_name: str,
+    search_dirs: list[Path],
+    *,
+    geometry_stem: str | None = None,
+) -> Path | None:
     named = [f"{case_name}.polar", f"{case_name}_DegenGeom.polar"]
+    if geometry_stem:
+        named.extend([f"{geometry_stem}.polar", f"{geometry_stem}_DegenGeom.polar"])
+
     for directory in search_dirs:
         if not directory.exists():
             continue
