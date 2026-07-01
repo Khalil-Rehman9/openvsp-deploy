@@ -217,6 +217,8 @@ def create_app() -> FastAPI:
         if body.runVspaero:
             commands.extend(
                 build_vspaero_commands(
+                    model=model,
+                    geometry_path=str(geom_path),
                     mach=mach,
                     alpha_start=alpha_start,
                     alpha_end=alpha_end,

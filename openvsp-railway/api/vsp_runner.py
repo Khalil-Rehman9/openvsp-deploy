@@ -39,14 +39,7 @@ def _write_script(geometry_file: str, commands: list[str], working_dir: Path) ->
     ]
     for command in commands:
         lines.append(f"    {_ensure_statement(command)}")
-    lines.extend(
-        [
-            "    Update();",
-            f'    SetVSP3FileName("{geometry_file}");',
-            f'    WriteVSPFile("{geometry_file}", SET_ALL);',
-            "}",
-        ]
-    )
+    lines.append("}")
     script_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return script_path
 

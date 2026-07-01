@@ -23,6 +23,10 @@ class UavModel:
     default_alpha_end: float = 12.0
     default_alpha_step: float = 2.0
     default_re: float = 1_000_000.0
+    # VSPAero: GeomSet and AnalysisMethod must match each .vsp3 (see VSPAEROSettings).
+    vspaero_geom_set: int = 0
+    vspaero_analysis_method: int = 0  # 0 = panel, 1 = vortex lattice
+    wing_geom_names: tuple[str, ...] = ("WingGeom", "wing")
 
 
 MODELS: dict[str, UavModel] = {
@@ -30,6 +34,9 @@ MODELS: dict[str, UavModel] = {
         id="hero-400ec",
         label="Hero 400EC",
         geometry_file="/data/geometry/hero-400ec.vsp3",
+        vspaero_geom_set=1,
+        vspaero_analysis_method=0,
+        wing_geom_names=("wing", "WingGeom"),
         input_fields=(
             InputField("wingSpan", "Wing Span (m)", 2.400),
             InputField("wingChord", "Wing Chord (m)", 0.360),
@@ -42,6 +49,9 @@ MODELS: dict[str, UavModel] = {
         id="shahed-136",
         label="Shahed 136",
         geometry_file="/data/geometry/shahed-136.vsp3",
+        vspaero_geom_set=1,
+        vspaero_analysis_method=0,
+        wing_geom_names=("wing", "WingGeom"),
         input_fields=(
             InputField("semiSpan", "Wing Semi-span (m)", 2.500),
             InputField("rootChord", "Root Chord (m)", 2.276),
@@ -53,6 +63,9 @@ MODELS: dict[str, UavModel] = {
         id="aai-shadow",
         label="AAI Shadow 200",
         geometry_file="/data/geometry/aai-shadow.vsp3",
+        vspaero_geom_set=0,
+        vspaero_analysis_method=1,
+        wing_geom_names=("WingGeom", "wing"),
         input_fields=(
             InputField("wingSpan", "Wing Span (m)", 4.68846),
             InputField("wingRootChord", "Wing Root Chord (m)", 0.6586),
@@ -67,6 +80,9 @@ MODELS: dict[str, UavModel] = {
         id="iai-heron",
         label="IAI Heron",
         geometry_file="/data/geometry/iai-heron.vsp3",
+        vspaero_geom_set=0,
+        vspaero_analysis_method=0,
+        wing_geom_names=("WingGeom", "wing"),
         input_fields=(
             InputField("wingSpan", "Wing Span (m)", 16.677),
             InputField("fuselageLength", "Fuselage Length (m)", 8.50),
