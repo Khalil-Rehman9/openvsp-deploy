@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG OPENVSP_VERSION=3.51.0
 ARG OPENVSP_DEB_URL=https://openvsp.org/zips/current/linux/OpenVSP-${OPENVSP_VERSION}-Ubuntu-24.04_amd64.deb
 
-# System deps: Python for openvsp-mcp REST API
+# System deps: Python venv for openvsp-mcp (avoids apt pip upgrade conflicts)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
@@ -14,7 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     python3 \
     python3-dev \
-    python3-pip \
     python3-venv \
     wget \
     && rm -rf /var/lib/apt/lists/*
@@ -30,17 +29,20 @@ RUN wget -q -O /tmp/openvsp.deb "${OPENVSP_DEB_URL}" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Resolve binary paths (deb may install to /usr/bin or /usr/local/bin)
-RUN VSP_PATH="$(command -v vsp || command -v vspscript || true)" \
-    && test -n "$VSP_PATH" \
-    && echo "OpenVSP binary: $VSP_PATH" \
-    && "$VSP_PATH" --version || true
+# Confirm OpenVSP binaries exist (vsp --version is not a valid CLI flag)
+RUN test -x /usr/local/bin/vsp \
+    && test -x /usr/local/bin/vspaero \
+    && echo "OpenVSP binaries: /usr/local/bin/vsp, /usr/local/bin/vspaero"
 
-# REST wrapper around OpenVSP (FastAPI)
-RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip setuptools wheel \
-    && pip3 install --no-cache-dir --break-system-packages \
+# REST wrapper around OpenVSP (FastAPI).
+# Use a venv — Ubuntu's apt-installed pip cannot be upgraded in-place.
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && /opt/venv/bin/pip install --no-cache-dir \
     "git+https://github.com/Three-Little-Birds/openvsp-mcp.git" \
     "uvicorn[standard]>=0.30"
+
+ENV PATH="/opt/venv/bin:$PATH"
 
 ENV OPENVSP_BIN=/usr/local/bin/vsp
 ENV VSPAERO_BIN=/usr/local/bin/vspaero
