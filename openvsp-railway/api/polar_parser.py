@@ -32,12 +32,17 @@ def parse_polar_file(path: Path) -> list[dict[str, float]]:
 
 
 def find_polar_near(case_name: str, search_dirs: list[Path]) -> Path | None:
-    candidates = [f"{case_name}.polar", f"{case_name}_DegenGeom.polar", f"{case_name}.adb"]
+    named = [f"{case_name}.polar", f"{case_name}_DegenGeom.polar"]
     for directory in search_dirs:
-        for name in candidates:
+        if not directory.exists():
+            continue
+        for name in named:
             path = directory / name
             if path.exists():
                 return path
+        polars = sorted(directory.glob("*.polar"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if polars:
+            return polars[0]
     return None
 
 

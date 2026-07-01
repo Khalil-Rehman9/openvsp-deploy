@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .model_registry import ParmTarget, UavModel
+from .model_registry import UavModel
 
 
 def _set_parm_line(geom_name: str, container: str, parm_name: str, value: float) -> str:
@@ -35,18 +35,32 @@ def build_vspaero_commands(
     alpha_step: float,
     reynolds: float,
 ) -> list[str]:
-    """Configure VSPAERO analysis settings via OpenVSP API."""
+    """
+    Run VSPAero through OpenVSP's Analysis Manager (not FindGeom).
+
+    VSPAERO settings are not a geometry component — use VSPAEROComputeGeometry
+    then VSPAEROSweep with SetDoubleAnalysisInput / ExecAnalysis.
+    """
+    alpha_npts = max(2, int((alpha_end - alpha_start) / alpha_step) + 1)
     return [
-        'string _a = FindGeom("VSPAEROSettings", 0);',
-        'if (_a != "") {',
-        f'  SetParmVal(GetParm(_a, "Mach", "VSPAERO"), {mach});',
-        f'  SetParmVal(GetParm(_a, "ReCref", "VSPAERO"), {reynolds});',
-        f'  SetParmVal(GetParm(_a, "AlphaStart", "VSPAERO"), {alpha_start});',
-        f'  SetParmVal(GetParm(_a, "AlphaEnd", "VSPAERO"), {alpha_end});',
-        f'  SetParmVal(GetParm(_a, "AlphaNpts", "VSPAERO"), '
-        f"{max(2, int((alpha_end - alpha_start) / alpha_step) + 1)});",
-        "}",
+        'SetAnalysisInputDefaults("VSPAEROComputeGeometry");',
+        'ExecAnalysis("VSPAEROComputeGeometry");',
+        'SetAnalysisInputDefaults("VSPAEROSweep");',
+        'array<int> _gs; _gs.push_back(0); SetIntAnalysisInput("VSPAEROSweep", "GeomSet", _gs, 0);',
+        'array<int> _rf; _rf.push_back(1); SetIntAnalysisInput("VSPAEROSweep", "RefFlag", _rf, 0);',
+        (
+            'array<string> _wid = FindGeomsWithName("WingGeom"); '
+            'if (_wid.size() == 0) { _wid = FindGeomsWithName("wing"); } '
+            'SetStringAnalysisInput("VSPAEROSweep", "WingID", _wid, 0);'
+        ),
+        f'array<double> _a0; _a0.push_back({alpha_start}); SetDoubleAnalysisInput("VSPAEROSweep", "AlphaStart", _a0, 0);',
+        f'array<double> _a1; _a1.push_back({alpha_end}); SetDoubleAnalysisInput("VSPAEROSweep", "AlphaEnd", _a1, 0);',
+        f'array<int> _an; _an.push_back({alpha_npts}); SetIntAnalysisInput("VSPAEROSweep", "AlphaNpts", _an, 0);',
+        f'array<double> _m; _m.push_back({mach}); SetDoubleAnalysisInput("VSPAEROSweep", "MachStart", _m, 0);',
+        'array<int> _mn; _mn.push_back(1); SetIntAnalysisInput("VSPAEROSweep", "MachNpts", _mn, 0);',
+        f'array<double> _re; _re.push_back({reynolds}); SetDoubleAnalysisInput("VSPAEROSweep", "ReCref", _re, 0);',
         "Update();",
+        'ExecAnalysis("VSPAEROSweep");',
     ]
 
 

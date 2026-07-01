@@ -224,7 +224,8 @@ def create_app() -> FastAPI:
         request = OpenVSPRequest(
             geometry_file=str(geom_path),
             set_commands=[VSPCommand(command=c) for c in commands],
-            run_vspaero=body.runVspaero,
+            # VSPAero runs inside the .vspscript via ExecAnalysis when enabled.
+            run_vspaero=False,
             case_name=case_name,
         )
 
@@ -235,7 +236,7 @@ def create_app() -> FastAPI:
 
         polar_path = find_polar_near(
             case_name,
-            [RESULTS_DIR, geom_path.parent, Path.cwd()],
+            [RESULTS_DIR, geom_path.parent, geom_path.parent.parent, Path.cwd()],
         )
         polar_rows = parse_polar_file(polar_path) if polar_path else []
         performance = compute_performance(polar_rows, velocity_mps=body.velocityMps)
