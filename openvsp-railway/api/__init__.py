@@ -1,0 +1,1 @@
+"""UAV → OpenVSP automation layer."""

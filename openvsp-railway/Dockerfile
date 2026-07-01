@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-dev \
     python3-venv \
+    unzip \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
@@ -56,6 +57,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f "http://127.0.0.1:${PORT:-8000}/health" || exit 1
 
+COPY api /app/api
+COPY models/uav-models.zip /opt/bootstrap/uav-models.zip
 COPY entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # Strip Windows CRLF if present — otherwise Linux sees shebang as /bin/sh\r
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
