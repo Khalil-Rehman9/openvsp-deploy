@@ -12,6 +12,9 @@ from io import BytesIO
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from openvsp_mcp.core import execute_openvsp
 from openvsp_mcp.fastapi_app import create_app as create_openvsp_app
 from openvsp_mcp.models import OpenVSPRequest, VSPCommand
@@ -24,6 +27,7 @@ from .script_builder import build_export_commands, build_geometry_commands, buil
 GEOMETRY_DIR = Path(os.environ.get("GEOMETRY_DIR", "/data/geometry"))
 RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", "/data/results"))
 UPLOAD_TOKEN = os.environ.get("UPLOAD_TOKEN", "")
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 class AnalyzeRequest(BaseModel):
@@ -57,6 +61,20 @@ class AnalyzeResponse(BaseModel):
 
 def create_app() -> FastAPI:
     app = create_openvsp_app()
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    if STATIC_DIR.is_dir():
+        @app.get("/")
+        def workbench():
+            return FileResponse(STATIC_DIR / "index.html")
+
+        app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.post("/api/upload-zip")
     async def upload_geometry_zip(

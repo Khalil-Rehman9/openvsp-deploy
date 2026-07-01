@@ -58,6 +58,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f "http://127.0.0.1:${PORT:-8000}/health" || exit 1
 
 COPY api /app/api
+COPY static /app/static
 COPY models/uav-models.zip /opt/bootstrap/uav-models.zip
 COPY entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # Strip Windows CRLF if present — otherwise Linux sees shebang as /bin/sh\r
