@@ -19,7 +19,7 @@ from openvsp_mcp.fastapi_app import create_app as create_openvsp_app
 from pydantic import BaseModel, ConfigDict, Field
 
 from .model_registry import MODELS, default_geometry_params, get_model, input_keys
-from .performance_matlab import compute_matlab_performance
+from .performance_matlab import compute_matlab_performance, default_reynolds
 from .polar_parser import (
     compute_performance,
     find_polar_near,
@@ -179,7 +179,7 @@ def create_app() -> FastAPI:
                     "alphaStart": m.default_alpha_start,
                     "alphaEnd": m.default_alpha_end,
                     "alphaStep": m.default_alpha_step,
-                    "re": m.default_re,
+                    "re": default_reynolds(m.id, default_geometry_params(m)),
                 },
             }
             for m in MODELS.values()
@@ -210,7 +210,9 @@ def create_app() -> FastAPI:
         alpha_start = body.alphaStart if body.alphaStart is not None else model.default_alpha_start
         alpha_end = body.alphaEnd if body.alphaEnd is not None else model.default_alpha_end
         alpha_step = body.alphaStep if body.alphaStep is not None else model.default_alpha_step
-        reynolds = body.reynolds if body.reynolds is not None else model.default_re
+        reynolds = body.reynolds if body.reynolds is not None else default_reynolds(
+            model.id, geom_params
+        )
 
         if body.runVspaero:
             commands.extend(

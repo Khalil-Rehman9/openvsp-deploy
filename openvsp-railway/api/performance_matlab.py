@@ -14,12 +14,71 @@ def _nearest_polar_row(polar: list[dict[str, float]], alpha_deg: float = 3.0) ->
     return min(polar, key=lambda r: abs(r["alpha"] - alpha_deg))
 
 
-def _extract_aero(polar: list[dict[str, float]]) -> tuple[float, float, float]:
-    row = _nearest_polar_row(polar)
-    cl = row["cl"]
-    cd = row["cd"]
-    cdi = row.get("cdi", max(cd * 0.4, 0.0))
+def _interpolate_polar_at_alpha(polar: list[dict[str, float]], alpha_deg: float = 3.0) -> dict[str, float]:
+    if not polar:
+        return {"alpha": alpha_deg, "cl": 0.4, "cd": 0.025, "cdi": 0.01}
+    rows = sorted(polar, key=lambda r: r["alpha"])
+    for row in rows:
+        if abs(row["alpha"] - alpha_deg) < 1e-6:
+            return row
+    for left, right in zip(rows, rows[1:]):
+        if left["alpha"] <= alpha_deg <= right["alpha"]:
+            span = right["alpha"] - left["alpha"]
+            if span <= 0:
+                return left
+            t = (alpha_deg - left["alpha"]) / span
+            left_cdi = left.get("cdi", max(left["cd"] * 0.4, 0.0))
+            right_cdi = right.get("cdi", max(right["cd"] * 0.4, 0.0))
+            return {
+                "alpha": alpha_deg,
+                "cl": left["cl"] + t * (right["cl"] - left["cl"]),
+                "cd": left["cd"] + t * (right["cd"] - left["cd"]),
+                "cdi": left_cdi + t * (right_cdi - left_cdi),
+            }
+    return _nearest_polar_row(polar, alpha_deg)
+
+
+def _sanitize_aero(
+    cl: float, cd: float, cdi: float, vehicle_id: str
+) -> tuple[float, float, float]:
+    bad = (
+        cl != cl
+        or cd != cd
+        or cl < 0
+        or cl > 4
+        or cd < 0
+        or cd > 2
+    )
+    if bad:
+        if vehicle_id == "hero-400ec":
+            return 0.42, 0.021, 0.009
+        return 0.38, 0.032, 0.014
+    if cdi != cdi:
+        cdi = max(cd * 0.4, 0.0)
     return cl, cd, cdi
+
+
+def _extract_aero(polar: list[dict[str, float]], vehicle_id: str) -> tuple[float, float, float]:
+    if not polar:
+        return _sanitize_aero(float("nan"), float("nan"), float("nan"), vehicle_id)
+    row = _interpolate_polar_at_alpha(polar)
+    return _sanitize_aero(row["cl"], row["cd"], row.get("cdi", max(row["cd"] * 0.4, 0.0)), vehicle_id)
+
+
+def default_reynolds(vehicle_id: str, params: dict[str, float]) -> float:
+    """Match MATLAB: Re at 50 m/s using reference chord."""
+    rho = 1.225
+    mu = 1.789e-5
+    v = 50.0
+    if vehicle_id == "hero-400ec":
+        cref = params.get("wingChord", 0.36)
+    elif vehicle_id == "shahed-136":
+        cref = params.get("rootChord", 2.276)
+    elif vehicle_id == "aai-shadow":
+        cref = params.get("wingRootChord", 0.6586)
+    else:
+        cref = params.get("sec1RootChord", 1.29)
+    return round(rho * v * cref / mu)
 
 
 def compute_matlab_performance(
@@ -27,7 +86,7 @@ def compute_matlab_performance(
     params: dict[str, float],
     polar: list[dict[str, float]],
 ) -> tuple[dict[str, float | None], dict[str, list[float]], list[str]]:
-    cl, cd, cdi = _extract_aero(polar)
+    cl, cd, cdi = _extract_aero(polar, vehicle_id)
     v = [float(x) for x in _velocity_grid(vehicle_id)]
 
     if vehicle_id == "hero-400ec":
@@ -36,7 +95,7 @@ def compute_matlab_performance(
         s_ref = wing_span * wing_chord
         ar = wing_span**2 / s_ref if s_ref else 0.0
         weight = 40.0 * G
-        cd0 = max(cd - cdi, 0.0)
+        cd0 = cd - cdi
         k = cdi / max(cl**2, 1e-6)
         batt_wh = 4500.0
         p_avail = 150.0

@@ -293,10 +293,14 @@
     function applyDefaults(model) {
       const d = model.defaults || {};
       $("mach").value = d.mach ?? 0.15;
-      $("re").value = d.re ?? 1e6;
       $("alphaStart").value = d.alphaStart ?? 0;
       $("alphaEnd").value = d.alphaEnd ?? 12;
       $("alphaStep").value = d.alphaStep ?? 2;
+      const params = {};
+      modelParameters(model).forEach((field) => {
+        params[field.key] = field.default;
+      });
+      $("re").value = d.re ?? defaultReynolds(model.id, params);
     }
 
     function applyLegacyApiFields(vehicle, body) {
@@ -350,24 +354,59 @@
       return Array.from({ length: 500 }, (_, i) => 15 + i * (end - 15) / 499);
     }
 
-    function nearestPolarRow(polar, alphaDeg = 3) {
+    function defaultReynolds(vehicleId, params) {
+      const RHO = 1.225;
+      const MU = 1.789e-5;
+      const V = 50;
+      let cref = 0.36;
+      if (vehicleId === "hero-400ec") cref = params.wingChord ?? 0.36;
+      else if (vehicleId === "shahed-136") cref = params.rootChord ?? 2.276;
+      else if (vehicleId === "aai-shadow") cref = params.wingRootChord ?? 0.6586;
+      else cref = params.sec1RootChord ?? 1.29;
+      return Math.round(RHO * V * cref / MU);
+    }
+
+    function interpolatePolarAtAlpha(polar, alphaDeg = 3) {
       if (!polar.length) return { alpha: alphaDeg, cl: 0.4, cd: 0.025, cdi: 0.01 };
-      return polar.reduce((best, row) =>
+      const rows = [...polar].sort((a, b) => a.alpha - b.alpha);
+      const exact = rows.find((r) => Math.abs(r.alpha - alphaDeg) < 1e-6);
+      if (exact) return exact;
+      for (let i = 0; i < rows.length - 1; i++) {
+        const left = rows[i];
+        const right = rows[i + 1];
+        if (left.alpha <= alphaDeg && alphaDeg <= right.alpha) {
+          const span = right.alpha - left.alpha;
+          if (span <= 0) return left;
+          const t = (alphaDeg - left.alpha) / span;
+          const leftCdi = left.cdi ?? Math.max(left.cd * 0.4, 0);
+          const rightCdi = right.cdi ?? Math.max(right.cd * 0.4, 0);
+          return {
+            alpha: alphaDeg,
+            cl: left.cl + t * (right.cl - left.cl),
+            cd: left.cd + t * (right.cd - left.cd),
+            cdi: leftCdi + t * (rightCdi - leftCdi),
+          };
+        }
+      }
+      return rows.reduce((best, row) =>
         Math.abs(row.alpha - alphaDeg) < Math.abs(best.alpha - alphaDeg) ? row : best
       );
     }
 
-    function extractAero(polar, vehicleId) {
-      const row = nearestPolarRow(polar);
-      let cl = row.cl;
-      let cd = row.cd;
-      let cdi = row.cdi ?? Math.max(cd * 0.4, 0);
-      const bad = Number.isNaN(cl) || cl < 0 || cl > 4 || cd < 0 || cd > 2;
+    function sanitizeAero(cl, cd, cdi, vehicleId) {
+      const bad = Number.isNaN(cl) || Number.isNaN(cd) || cl < 0 || cl > 4 || cd < 0 || cd > 2;
       if (bad) {
-        if (vehicleId === "hero-400ec") { cl = 0.42; cd = 0.021; cdi = 0.009; }
-        else { cl = 0.38; cd = 0.032; cdi = 0.014; }
+        if (vehicleId === "hero-400ec") return { cl: 0.42, cd: 0.021, cdi: 0.009 };
+        return { cl: 0.38, cd: 0.032, cdi: 0.014 };
       }
+      if (Number.isNaN(cdi)) cdi = Math.max(cd * 0.4, 0);
       return { cl, cd, cdi };
+    }
+
+    function extractAero(polar, vehicleId) {
+      if (!polar.length) return sanitizeAero(NaN, NaN, NaN, vehicleId);
+      const row = interpolatePolarAtAlpha(polar, 3);
+      return sanitizeAero(row.cl, row.cd, row.cdi ?? Math.max(row.cd * 0.4, 0), vehicleId);
     }
 
     function parabolicPolar(velocities, weight, sRef, cd0, k, eta, pAvail) {
@@ -396,7 +435,7 @@
         sRef = wingSpan * wingChord;
         ar = wingSpan ** 2 / sRef;
         const weight = 40 * G;
-        cd0 = Math.max(cd - cdi, 0);
+        cd0 = cd - cdi;
         k = cdi / Math.max(cl ** 2, 1e-6);
         const battWh = 4500;
         const eta = 0.65;
@@ -544,13 +583,13 @@
       let peaks = null;
       const color = VEHICLE_COLORS[data.vehicle] || "#3b9eff";
 
-      if (!curves.velocity_mps?.length && lastPayload) {
+      if (lastPayload) {
         const computed = computeMatlabPerformance(
           data.vehicle,
           geometryParamsFromPayload(lastPayload),
           polar,
         );
-        perf = { ...perf, ...computed.performance };
+        perf = computed.performance;
         curves = computed.curves;
         outputText = computed.output_text;
         peaks = computed.peaks;
