@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>UAV Aero Workbench</title>
+  <title>UAV Aero Workbench (Local)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -14,7 +14,6 @@
       --muted: #8fa3c4;
       --accent: #3b9eff;
       --accent2: #22d3a6;
-      --danger: #f87171;
     }
     * { box-sizing: border-box; }
     body {
@@ -35,6 +34,15 @@
     }
     h1 { margin: 0; font-size: 1.35rem; font-weight: 600; }
     .subtitle { color: var(--muted); font-size: 0.9rem; margin-top: 0.25rem; }
+    .badge {
+      display: inline-block;
+      background: #1e3a5f;
+      color: #93c5fd;
+      font-size: 0.72rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      margin-left: 0.5rem;
+    }
     .layout {
       display: grid;
       grid-template-columns: 340px 1fr;
@@ -43,9 +51,7 @@
       max-width: 1400px;
       margin: 0 auto;
     }
-    @media (max-width: 900px) {
-      .layout { grid-template-columns: 1fr; }
-    }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
     .panel {
       background: var(--panel);
       border: 1px solid var(--border);
@@ -98,20 +104,16 @@
     }
     .stat .v { font-size: 1.35rem; font-weight: 700; color: var(--accent2); }
     .stat .k { font-size: 0.75rem; color: var(--muted); }
-    .charts {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-    }
+    .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
     @media (max-width: 1100px) { .charts { grid-template-columns: 1fr; } }
     .chart-box {
       background: #0d1526;
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 0.75rem;
-      min-height: 280px;
+      height: 300px;
     }
-    .chart-box h3 { margin: 0 0 0.5rem; font-size: 0.95rem; font-weight: 600; }
+    .chart-box h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
     .status {
       padding: 0.65rem 0.85rem;
       border-radius: 8px;
@@ -134,51 +136,36 @@
 <body>
   <header>
     <div>
-      <h1>UAV Aero Workbench</h1>
-      <div class="subtitle">OpenVSP + VSPAero via FastAPI on Railway</div>
+      <h1>UAV Aero Workbench <span class="badge">LOCAL HTML</span></h1>
+      <div class="subtitle">Open this file in your browser — data goes to Railway FastAPI</div>
     </div>
-    <div class="api-link">API: <a id="apiLink" href="#" target="_blank" rel="noopener"></a></div>
+    <div class="api-link">API: <a id="apiLink" href="https://openvsp-api-production.up.railway.app/docs" target="_blank" rel="noopener">https://openvsp-api-production.up.railway.app</a></div>
   </header>
 
   <div class="layout">
     <aside class="panel">
       <label for="apiBase">API base URL</label>
-      <input id="apiBase" type="url" placeholder="https://openvsp-api-production.up.railway.app" />
+      <input id="apiBase" type="url" value="https://openvsp-api-production.up.railway.app" />
 
       <label for="vehicle">UAV model</label>
       <select id="vehicle"></select>
-
       <div id="geomFields"></div>
 
       <hr style="border-color:var(--border);margin:1rem 0" />
       <div class="row2">
-        <div>
-          <label for="mach">Mach</label>
-          <input id="mach" type="number" step="0.01" />
-        </div>
-        <div>
-          <label for="re">Reynolds</label>
-          <input id="re" type="number" step="1000" />
-        </div>
+        <div><label for="mach">Mach</label><input id="mach" type="number" step="0.01" /></div>
+        <div><label for="re">Reynolds</label><input id="re" type="number" step="1000" /></div>
       </div>
       <div class="row2">
-        <div>
-          <label for="alphaStart">α start (°)</label>
-          <input id="alphaStart" type="number" step="0.5" />
-        </div>
-        <div>
-          <label for="alphaEnd">α end (°)</label>
-          <input id="alphaEnd" type="number" step="0.5" />
-        </div>
+        <div><label for="alphaStart">α start (°)</label><input id="alphaStart" type="number" step="0.5" /></div>
+        <div><label for="alphaEnd">α end (°)</label><input id="alphaEnd" type="number" step="0.5" /></div>
       </div>
       <label for="alphaStep">α step (°)</label>
       <input id="alphaStep" type="number" step="0.5" />
-
       <div class="check">
         <input id="runVspaero" type="checkbox" checked />
-        <label for="runVspaero" style="margin:0;text-transform:none;letter-spacing:0">Run VSPAero analysis</label>
+        <label for="runVspaero" style="margin:0;text-transform:none">Run VSPAero</label>
       </div>
-
       <button id="runBtn">Run analysis</button>
     </aside>
 
@@ -186,17 +173,14 @@
       <div id="status" class="status"></div>
       <div class="stats hidden" id="stats"></div>
       <div class="charts hidden" id="charts">
-        <div class="chart-box"><h3>Lift curve — CL vs α</h3><canvas id="chartCl"></canvas></div>
-        <div class="chart-box"><h3>Drag curve — CD vs α</h3><canvas id="chartCd"></canvas></div>
-        <div class="chart-box"><h3>Efficiency — L/D vs α</h3><canvas id="chartLd"></canvas></div>
-        <div class="chart-box"><h3>Drag polar — CD vs CL</h3><canvas id="chartPolar"></canvas></div>
+        <div class="chart-box"><h3>CL vs α</h3><canvas id="chartCl"></canvas></div>
+        <div class="chart-box"><h3>CD vs α</h3><canvas id="chartCd"></canvas></div>
+        <div class="chart-box"><h3>L/D vs α</h3><canvas id="chartLd"></canvas></div>
+        <div class="chart-box"><h3>Drag polar</h3><canvas id="chartPolar"></canvas></div>
       </div>
       <div class="panel hidden" id="tablePanel" style="margin-top:1rem">
         <h3 style="margin-top:0">Polar data</h3>
-        <table>
-          <thead><tr><th>α (°)</th><th>CL</th><th>CD</th><th>L/D</th></tr></thead>
-          <tbody id="polarBody"></tbody>
-        </table>
+        <table><thead><tr><th>α</th><th>CL</th><th>CD</th><th>L/D</th></tr></thead><tbody id="polarBody"></tbody></table>
       </div>
     </main>
   </div>
@@ -204,25 +188,18 @@
   <script>
     const DEFAULT_API = "https://openvsp-api-production.up.railway.app";
     const FIELD_META = {
-      span: { label: "Wing span (m)", step: "0.01", placeholder: "e.g. 4.0" },
-      rootChord: { label: "Root chord (m)", step: "0.01", placeholder: "e.g. 0.5" },
-      tipChord: { label: "Tip chord (m)", step: "0.01", placeholder: "e.g. 0.25" },
-      outerRootChord: { label: "Outer root chord (m)", step: "0.01", placeholder: "" },
-      outerTipChord: { label: "Outer tip chord (m)", step: "0.01", placeholder: "" },
+      span: { label: "Wing span (m)", step: "0.01", placeholder: "4.0" },
+      rootChord: { label: "Root chord (m)", step: "0.01", placeholder: "0.5" },
+      tipChord: { label: "Tip chord (m)", step: "0.01", placeholder: "0.25" },
+      outerRootChord: { label: "Outer root chord (m)", step: "0.01" },
+      outerTipChord: { label: "Outer tip chord (m)", step: "0.01" },
     };
-
-    let models = [];
-    let charts = {};
-
+    let models = [], charts = {};
     const $ = (id) => document.getElementById(id);
 
     function apiBase() {
       const v = $("apiBase").value.trim().replace(/\/$/, "");
-      if (v) return v;
-      if (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null") {
-        return DEFAULT_API;
-      }
-      return window.location.origin;
+      return v || DEFAULT_API;
     }
 
     function setStatus(msg, type) {
@@ -233,8 +210,7 @@
 
     function chartDefaults() {
       return {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
           x: { grid: { color: "#243049" }, ticks: { color: "#8fa3c4" } },
@@ -243,22 +219,15 @@
       };
     }
 
-    function destroyCharts() {
-      Object.values(charts).forEach((c) => c.destroy());
-      charts = {};
-    }
+    function destroyCharts() { Object.values(charts).forEach((c) => c.destroy()); charts = {}; }
 
     function renderGeomFields(model) {
-      const wrap = $("geomFields");
-      wrap.innerHTML = "";
+      $("geomFields").innerHTML = "";
       (model.parameters || []).forEach((key) => {
-        const meta = FIELD_META[key] || { label: key, step: "0.01", placeholder: "" };
-        const div = document.createElement("div");
-        div.innerHTML = `
-          <label for="f_${key}">${meta.label}</label>
-          <input id="f_${key}" type="number" step="${meta.step}" placeholder="${meta.placeholder}" />
-        `;
-        wrap.appendChild(div);
+        const m = FIELD_META[key] || { label: key, step: "0.01", placeholder: "" };
+        const d = document.createElement("div");
+        d.innerHTML = `<label for="f_${key}">${m.label}</label><input id="f_${key}" type="number" step="${m.step}" placeholder="${m.placeholder || ""}" />`;
+        $("geomFields").appendChild(d);
       });
     }
 
@@ -276,15 +245,15 @@
       const model = models.find((m) => m.id === vehicle);
       const body = {
         vehicle,
-        mach: parseFloat($("mach").value),
-        alphaStart: parseFloat($("alphaStart").value),
-        alphaEnd: parseFloat($("alphaEnd").value),
-        alphaStep: parseFloat($("alphaStep").value),
-        re: parseFloat($("re").value),
+        mach: +$("mach").value,
+        alphaStart: +$("alphaStart").value,
+        alphaEnd: +$("alphaEnd").value,
+        alphaStep: +$("alphaStep").value,
+        re: +$("re").value,
         runVspaero: $("runVspaero").checked,
       };
       (model?.parameters || []).forEach((key) => {
-        const v = parseFloat($(`f_${key}`)?.value);
+        const v = +$(`f_${key}`)?.value;
         if (!Number.isNaN(v)) body[key] = v;
       });
       return body;
@@ -293,116 +262,69 @@
     function renderResults(data) {
       const polar = data.polar || [];
       const perf = data.performance || {};
-
       $("stats").innerHTML = `
         <div class="stat"><div class="k">Vehicle</div><div class="v" style="font-size:1rem">${data.vehicle}</div></div>
         <div class="stat"><div class="k">L/D max</div><div class="v">${perf.ld_max != null ? perf.ld_max.toFixed(2) : "—"}</div></div>
-        <div class="stat"><div class="k">CL @ L/D max</div><div class="v">${perf.cl_at_ld_max != null ? perf.cl_at_ld_max.toFixed(3) : "—"}</div></div>
-        <div class="stat"><div class="k">CD @ L/D max</div><div class="v">${perf.cd_at_ld_max != null ? perf.cd_at_ld_max.toFixed(4) : "—"}</div></div>
-        <div class="stat"><div class="k">Polar points</div><div class="v">${polar.length}</div></div>
-      `;
+        <div class="stat"><div class="k">CL @ L/D max</div><div class="v">${perf.cl_at_ld_max?.toFixed(3) ?? "—"}</div></div>
+        <div class="stat"><div class="k">CD @ L/D max</div><div class="v">${perf.cd_at_ld_max?.toFixed(4) ?? "—"}</div></div>
+        <div class="stat"><div class="k">Points</div><div class="v">${polar.length}</div></div>`;
       $("stats").classList.remove("hidden");
-
-      const tbody = $("polarBody");
-      tbody.innerHTML = polar.map((r) => {
-        const ld = r.cd ? (r.cl / r.cd).toFixed(2) : "—";
-        return `<tr><td>${r.alpha}</td><td>${r.cl.toFixed(4)}</td><td>${r.cd.toFixed(5)}</td><td>${ld}</td></tr>`;
-      }).join("");
-      $("tablePanel").classList.toggle("hidden", polar.length === 0);
-
-      if (!polar.length) {
-        $("charts").classList.add("hidden");
-        setStatus("Analysis finished but no polar data returned. Try runVspaero or check OpenVSP logs.", "ok");
-        return;
-      }
+      $("polarBody").innerHTML = polar.map((r) =>
+        `<tr><td>${r.alpha}</td><td>${r.cl.toFixed(4)}</td><td>${r.cd.toFixed(5)}</td><td>${r.cd ? (r.cl/r.cd).toFixed(2) : "—"}</td></tr>`
+      ).join("");
+      $("tablePanel").classList.toggle("hidden", !polar.length);
+      if (!polar.length) { $("charts").classList.add("hidden"); setStatus("No polar data — try with VSPAero enabled.", "ok"); return; }
 
       const alphas = polar.map((r) => r.alpha);
       const cls = polar.map((r) => r.cl);
       const cds = polar.map((r) => r.cd);
       const lds = polar.map((r) => (r.cd ? r.cl / r.cd : 0));
-
       destroyCharts();
       $("charts").classList.remove("hidden");
-
-      charts.cl = new Chart($("chartCl"), {
-        type: "line",
-        data: { labels: alphas, datasets: [{ data: cls, borderColor: "#3b9eff", tension: 0.25, pointRadius: 4 }] },
-        options: { ...chartDefaults(), scales: { ...chartDefaults().scales, x: { ...chartDefaults().scales.x, title: { display: true, text: "α (deg)", color: "#8fa3c4" } }, y: { ...chartDefaults().scales.y, title: { display: true, text: "CL", color: "#8fa3c4" } } } },
-      });
-
-      charts.cd = new Chart($("chartCd"), {
-        type: "line",
-        data: { labels: alphas, datasets: [{ data: cds, borderColor: "#f59e0b", tension: 0.25, pointRadius: 4 }] },
-        options: { ...chartDefaults(), scales: { ...chartDefaults().scales, x: { ...chartDefaults().scales.x, title: { display: true, text: "α (deg)", color: "#8fa3c4" } }, y: { ...chartDefaults().scales.y, title: { display: true, text: "CD", color: "#8fa3c4" } } } },
-      });
-
-      charts.ld = new Chart($("chartLd"), {
-        type: "line",
-        data: { labels: alphas, datasets: [{ data: lds, borderColor: "#22d3a6", tension: 0.25, pointRadius: 4 }] },
-        options: { ...chartDefaults(), scales: { ...chartDefaults().scales, x: { ...chartDefaults().scales.x, title: { display: true, text: "α (deg)", color: "#8fa3c4" } }, y: { ...chartDefaults().scales.y, title: { display: true, text: "L/D", color: "#8fa3c4" } } } },
-      });
-
+      const ax = (xl, yl) => ({ ...chartDefaults(), scales: {
+        x: { ...chartDefaults().scales.x, title: { display: true, text: xl, color: "#8fa3c4" } },
+        y: { ...chartDefaults().scales.y, title: { display: true, text: yl, color: "#8fa3c4" } },
+      }});
+      charts.cl = new Chart($("chartCl"), { type: "line", data: { labels: alphas, datasets: [{ data: cls, borderColor: "#3b9eff", tension: 0.25 }] }, options: ax("α (°)", "CL") });
+      charts.cd = new Chart($("chartCd"), { type: "line", data: { labels: alphas, datasets: [{ data: cds, borderColor: "#f59e0b", tension: 0.25 }] }, options: ax("α (°)", "CD") });
+      charts.ld = new Chart($("chartLd"), { type: "line", data: { labels: alphas, datasets: [{ data: lds, borderColor: "#22d3a6", tension: 0.25 }] }, options: ax("α (°)", "L/D") });
       charts.polar = new Chart($("chartPolar"), {
         type: "scatter",
-        data: { datasets: [{ data: cls.map((cl, i) => ({ x: cl, y: cds[i] })), borderColor: "#a78bfa", backgroundColor: "#a78bfa", showLine: true, tension: 0.25, pointRadius: 4 }] },
-        options: {
-          ...chartDefaults(),
-          scales: {
-            x: { ...chartDefaults().scales.x, title: { display: true, text: "CL", color: "#8fa3c4" } },
-            y: { ...chartDefaults().scales.y, title: { display: true, text: "CD", color: "#8fa3c4" } },
-          },
-        },
+        data: { datasets: [{ data: cls.map((cl, i) => ({ x: cl, y: cds[i] })), borderColor: "#a78bfa", showLine: true, tension: 0.25 }] },
+        options: ax("CL", "CD"),
       });
-
-      setStatus(`Done — case ${data.case_name}`, "ok");
+      setStatus("Done — " + data.case_name, "ok");
     }
 
     async function loadModels() {
       const base = apiBase();
-      $("apiLink").href = base + "/docs";
-      $("apiLink").textContent = base;
-
       const res = await fetch(base + "/api/models");
-      if (!res.ok) throw new Error("Failed to load models (" + res.status + ")");
+      if (!res.ok) throw new Error("API error " + res.status + " — is Railway running?");
       models = await res.json();
-
-      const sel = $("vehicle");
-      sel.innerHTML = models.map((m) => `<option value="${m.id}">${m.label}</option>`).join("");
-
-      const onChange = () => {
-        const m = models.find((x) => x.id === sel.value);
-        if (m) { renderGeomFields(m); applyDefaults(m); }
-      };
-      sel.onchange = onChange;
+      $("vehicle").innerHTML = models.map((m) => `<option value="${m.id}">${m.label}</option>`).join("");
+      const onChange = () => { const m = models.find((x) => x.id === $("vehicle").value); if (m) { renderGeomFields(m); applyDefaults(m); } };
+      $("vehicle").onchange = onChange;
       onChange();
+      setStatus("Connected to API. Pick a model and run analysis.", "ok");
     }
 
-    async function runAnalysis() {
-      const base = apiBase();
-      const btn = $("runBtn");
-      btn.disabled = true;
-      setStatus("Running OpenVSP analysis — this may take 1–5 minutes…", "busy");
-
+    $("runBtn").onclick = async () => {
+      $("runBtn").disabled = true;
+      setStatus("Running OpenVSP… (1–5 min)", "busy");
       try {
-        const res = await fetch(base + "/api/analyze", {
+        const res = await fetch(apiBase() + "/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(buildPayload()),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.detail || res.statusText || "Request failed");
+        if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail) || res.statusText);
         renderResults(data);
-      } catch (err) {
-        setStatus(err.message || String(err), "err");
-      } finally {
-        btn.disabled = false;
-      }
-    }
+      } catch (e) { setStatus(e.message, "err"); }
+      finally { $("runBtn").disabled = false; }
+    };
 
-    $("apiBase").value = DEFAULT_API;
-    $("runBtn").onclick = runAnalysis;
-
-    loadModels().catch((e) => setStatus("Could not reach API: " + e.message, "err"));
+    loadModels().catch((e) => setStatus(e.message, "err"));
   </script>
 </body>
 </html>

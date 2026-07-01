@@ -27,7 +27,14 @@ from .script_builder import build_export_commands, build_geometry_commands, buil
 GEOMETRY_DIR = Path(os.environ.get("GEOMETRY_DIR", "/data/geometry"))
 RESULTS_DIR = Path(os.environ.get("RESULTS_DIR", "/data/results"))
 UPLOAD_TOKEN = os.environ.get("UPLOAD_TOKEN", "")
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+STATIC_DIR = Path(os.environ.get("STATIC_DIR", "/app/static"))
+
+
+def _workbench_index() -> Path:
+    for candidate in (STATIC_DIR / "index.html", Path("/app/static/index.html")):
+        if candidate.is_file():
+            return candidate
+    raise HTTPException(status_code=404, detail="Workbench HTML not found on server")
 
 
 class AnalyzeRequest(BaseModel):
@@ -70,11 +77,12 @@ def create_app() -> FastAPI:
     )
 
     if STATIC_DIR.is_dir():
-        @app.get("/")
-        def workbench():
-            return FileResponse(STATIC_DIR / "index.html")
+        app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
-        app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    @app.get("/", include_in_schema=False)
+    @app.get("/workbench", include_in_schema=False)
+    def workbench():
+        return FileResponse(_workbench_index())
 
     @app.post("/api/upload-zip")
     async def upload_geometry_zip(
